@@ -1,0 +1,4 @@
+# One notebook path per line
+./notebooks/EDA.ipynb
+./notebooks/Model Training.ipynb
+/Users/yourname/Documents/Research Notebook.ipynb
