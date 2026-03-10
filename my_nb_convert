@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+
+set -u
+
+SCRIPT_NAME="$(basename "$0")"
+
+print_usage() {
+  cat <<USAGE
+Usage:
+  ${SCRIPT_NAME} --nb <notebook_list.txt> --to <format> --output <output_directory>
+
+Description:
+  Batch-convert Jupyter notebooks listed in a text file using jupyter nbconvert.
+
+Required arguments:
+  --nb       Path to a text file containing one notebook path per line
+  --to       Target output format passed to "jupyter nbconvert --to"
+  --output   Output directory for converted files
+
+Optional arguments:
+  --help     Show this help message and exit
+
+Notes:
+  - Empty lines are ignored.
+  - Lines beginning with '#' are treated as comments and ignored.
+  - Notebook paths with spaces are supported.
+USAGE
+}
+
+error() {
+  printf 'Error: %s\n' "$1" >&2
+}
+
+nb_list_file=""
+convert_format=""
+output_dir=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --nb)
+      [[ $# -lt 2 ]] && { error "Missing value for --nb."; print_usage; exit 2; }
+      nb_list_file="$2"
+      shift 2
+      ;;
+    --to)
+      [[ $# -lt 2 ]] && { error "Missing value for --to."; print_usage; exit 2; }
+      convert_format="$2"
+      shift 2
+      ;;
+    --output)
+      [[ $# -lt 2 ]] && { error "Missing value for --output."; print_usage; exit 2; }
+      output_dir="$2"
+      shift 2
+      ;;
+    --help|-h)
+      print_usage
+      exit 0
+      ;;
+    *)
+      error "Unknown argument: $1"
+      print_usage
+      exit 2
+      ;;
+  esac
+done
+
+if [[ -z "$nb_list_file" || -z "$convert_format" || -z "$output_dir" ]]; then
+  error "--nb, --to, and --output are required."
+  print_usage
+  exit 2
+fi
+
+if ! command -v jupyter >/dev/null 2>&1; then
+  error "'jupyter' was not found in PATH. Install Jupyter before running this script."
+  exit 127
+fi
+
+if [[ ! -f "$nb_list_file" ]]; then
+  error "Notebook list file does not exist: $nb_list_file"
+  exit 1
+fi
+
+if [[ ! -r "$nb_list_file" ]]; then
+  error "Notebook list file is not readable: $nb_list_file"
+  exit 1
+fi
+
+if ! mkdir -p "$output_dir"; then
+  error "Failed to create output directory: $output_dir"
+  exit 1
+fi
+
+total=0
+converted=0
+failed=0
+
+while IFS= read -r notebook_path || [[ -n "$notebook_path" ]]; do
+  [[ -z "$notebook_path" ]] && continue
+
+  # Skip comment lines that begin with '#', including optional leading whitespace.
+  if [[ "$notebook_path" =~ ^[[:space:]]*# ]]; then
+    continue
+  fi
+
+  total=$((total + 1))
+  printf '[%d] Converting: %s\n' "$total" "$notebook_path"
+
+  if [[ ! -f "$notebook_path" ]]; then
+    error "Notebook file does not exist: $notebook_path"
+    failed=$((failed + 1))
+    continue
+  fi
+
+  if jupyter nbconvert --to "$convert_format" --output-dir "$output_dir" "$notebook_path"; then
+    converted=$((converted + 1))
+  else
+    error "Conversion failed for: $notebook_path"
+    failed=$((failed + 1))
+  fi
+done < "$nb_list_file"
+
+printf '\nSummary: %d succeeded, %d failed, %d total processed.\n' "$converted" "$failed" "$total"
+
+if (( failed > 0 )); then
+  exit 1
+fi
+
+exit 0
